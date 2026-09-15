@@ -126,10 +126,10 @@ export default function App() {
   const exportImage = (format, quality = 0.9) => {
     if (!image) return;
     const canvas = canvasRef.current;
-    const mime = \`image/\${format}\`;
+    const mime = `image/${format}`;
     const url = canvas.toDataURL(mime, quality);
     const a = document.createElement('a');
-    a.download = \`pixelpro_export.\${format === 'jpeg' ? 'jpg' : format}\`;
+    a.download = `pixelpro_export.${format === 'jpeg' ? 'jpg' : format}`;
     a.href = url;
     a.click();
     setShowExportModal(false);
