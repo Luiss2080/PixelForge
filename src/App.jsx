@@ -1,4 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Settings, Info, X } from 'lucide-react';
+import './index.css';
 
 export default function App() {
   const canvasRef = useRef(null);
@@ -10,26 +13,26 @@ export default function App() {
   
   const [brightness, setBrightness] = useState(100);
   const [contrast, setContrast] = useState(100);
+
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showInfoModal, setShowInfoModal] = useState(false);
   
   const MAX_HISTORY = 10;
 
-  // Render the current state to the canvas
   const renderCanvas = useCallback((imgData = null, resetFilters = false) => {
     const canvas = canvasRef.current;
     if (!canvas || !image) return;
     const ctx = canvas.getContext('2d');
     
-    // Draw original image or provided imageData
     if (!imgData) {
        ctx.filter = resetFilters ? 'none' : `brightness(${brightness}%) contrast(${contrast}%)`;
        ctx.drawImage(image, 0, 0);
-       ctx.filter = 'none'; // reset for future operations
+       ctx.filter = 'none';
     } else {
        ctx.putImageData(imgData, 0, 0);
     }
   }, [image, brightness, contrast]);
 
-  // Handle image load
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -46,7 +49,6 @@ export default function App() {
         setBrightness(100);
         setContrast(100);
         
-        // Initial state for history
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0);
         const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -58,14 +60,12 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
-  // Re-render when brightness/contrast changes, if not using an advanced pixel filter
   useEffect(() => {
     if (image && historyIndex === 0) {
       renderCanvas();
     }
   }, [brightness, contrast, image, historyIndex, renderCanvas]);
 
-  // Save current canvas to history
   const saveHistory = () => {
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
@@ -73,36 +73,30 @@ export default function App() {
     
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(imgData);
-    if (newHistory.length > MAX_HISTORY) {
-        newHistory.shift();
-    }
+    if (newHistory.length > MAX_HISTORY) newHistory.shift();
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
   };
 
   const undo = () => {
     if (historyIndex > 0) {
-      const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
-      renderCanvas(history[newIndex]);
+      setHistoryIndex(prev => prev - 1);
+      renderCanvas(history[historyIndex - 1]);
     }
   };
 
   const redo = () => {
     if (historyIndex < history.length - 1) {
-      const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
-      renderCanvas(history[newIndex]);
+      setHistoryIndex(prev => prev + 1);
+      renderCanvas(history[historyIndex + 1]);
     }
   };
 
-  // Apply Pixel Filters
   const applyFilter = (filterFn) => {
     if (!image) return;
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     
-    // Always start from current history state so filters can stack
     ctx.putImageData(history[historyIndex], 0, 0);
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imgData.data;
@@ -118,51 +112,27 @@ export default function App() {
     saveHistory();
   };
 
-  const filterSepia = () => {
-    applyFilter((r, g, b) => ({
-        r: Math.min(255, (r * 0.393) + (g * 0.769) + (b * 0.189)),
-        g: Math.min(255, (r * 0.349) + (g * 0.686) + (b * 0.168)),
-        b: Math.min(255, (r * 0.272) + (g * 0.534) + (b * 0.131))
-    }));
-  };
+  const filterSepia = () => applyFilter((r, g, b) => ({
+      r: Math.min(255, (r * 0.393) + (g * 0.769) + (b * 0.189)),
+      g: Math.min(255, (r * 0.349) + (g * 0.686) + (b * 0.168)),
+      b: Math.min(255, (r * 0.272) + (g * 0.534) + (b * 0.131))
+  }));
 
-  const filterInvert = () => {
-    applyFilter((r, g, b) => ({ r: 255 - r, g: 255 - g, b: 255 - b }));
-  };
+  const filterGrayscale = () => applyFilter((r, g, b) => {
+      const gray = (r * 0.3) + (g * 0.59) + (b * 0.11);
+      return { r: gray, g: gray, b: gray };
+  });
 
-  const filterBinary = () => {
-    applyFilter((r, g, b) => {
-        const avg = (r + g + b) / 3;
-        const val = avg > 128 ? 255 : 0;
-        return { r: val, g: val, b: val };
-    });
-  };
-  
-  const filterGrayscale = () => {
-    applyFilter((r, g, b) => {
-        const gray = (r * 0.3) + (g * 0.59) + (b * 0.11);
-        return { r: gray, g: gray, b: gray };
-    });
-  };
-
-  const exportImage = (format) => {
+  const exportImage = (format, quality = 0.9) => {
     if (!image) return;
     const canvas = canvasRef.current;
-    const mime = `image/${format}`;
-    const url = canvas.toDataURL(mime, 0.9);
+    const mime = \`image/\${format}\`;
+    const url = canvas.toDataURL(mime, quality);
     const a = document.createElement('a');
-    a.download = `pixelpro_export.${format === 'jpeg' ? 'jpg' : format}`;
+    a.download = \`pixelpro_export.\${format === 'jpeg' ? 'jpg' : format}\`;
     a.href = url;
     a.click();
-  };
-
-  const resetAll = () => {
-    if (!image) return;
-    setBrightness(100);
-    setContrast(100);
-    setHistory([history[0]]);
-    setHistoryIndex(0);
-    renderCanvas(history[0]);
+    setShowExportModal(false);
   };
 
   return (
@@ -171,77 +141,111 @@ export default function App() {
       <div className="orbe orbe-1"></div>
       <div className="orbe orbe-2"></div>
 
-      <main className="contenedor-principal glassmorphism">
-          <header className="header">
-              <h1 className="titulo">PixelPro <span className="highlight">Studio</span></h1>
-              <p className="subtitulo">Edición profesional y privada en tu navegador</p>
-          </header>
-          
-          <div className="controles-superiores">
-              <button onClick={() => fileInputRef.current.click()} className="btn btn-primario pulse-anim">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
-                  Cargar Imagen
+      <div className="app-layout">
+        {/* TOP BAR */}
+        <header className="topbar glassmorphism">
+            <h1 className="titulo-small">PixelPro <span className="highlight">V2</span></h1>
+            <div className="topbar-actions">
+              <button onClick={() => fileInputRef.current.click()} className="btn btn-primario btn-sm">
+                  <ImageIcon size={16} /> Cargar
               </button>
               <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="oculto" />
-              
               {image && (
-                <>
-                  <button onClick={() => exportImage('png')} className="btn btn-secundario">PNG</button>
-                  <button onClick={() => exportImage('jpeg')} className="btn btn-secundario">JPG</button>
-                  <button onClick={() => exportImage('webp')} className="btn btn-secundario">WebP</button>
-                </>
+                <button onClick={() => setShowExportModal(true)} className="btn btn-secundario btn-sm">
+                    <Download size={16} /> Exportar
+                </button>
               )}
-          </div>
+              <button onClick={() => setShowInfoModal(true)} className="btn btn-secundario btn-sm btn-icon">
+                  <Info size={16} />
+              </button>
+            </div>
+        </header>
 
-          <div className="area-workspace">
-              <div className="area-canvas">
-                  <canvas ref={canvasRef} style={{ display: image ? 'block' : 'none' }}></canvas>
-                  {!image && (
-                      <div className="mensaje-vacio">
-                          <svg className="icono-flotante" xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-                          <span>Sube una imagen para desatar la magia</span>
-                      </div>
-                  )}
+        <div className="main-content">
+            {/* LEFT SIDEBAR - Herramientas */}
+            <aside className="sidebar-left glassmorphism">
+              <h3>Filtros</h3>
+              <div className="tool-grid">
+                  <button onClick={filterSepia} disabled={!image} className="btn-filtro"><Settings size={14}/> Sepia</button>
+                  <button onClick={filterGrayscale} disabled={!image} className="btn-filtro"><Settings size={14}/> Grises</button>
+              </div>
+            </aside>
+
+            {/* WORKSPACE - Centro */}
+            <main className="workspace glassmorphism">
+                <div className="area-canvas">
+                    <canvas ref={canvasRef} style={{ display: image ? 'block' : 'none' }}></canvas>
+                    {!image && (
+                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="mensaje-vacio">
+                            <ImageIcon size={48} className="icono-flotante" />
+                            <span>Sube una imagen para empezar</span>
+                        </motion.div>
+                    )}
+                </div>
+            </main>
+
+            {/* RIGHT SIDEBAR - Propiedades e Historial */}
+            <aside className="sidebar-right glassmorphism">
+              <h3>Ajustes Base</h3>
+              <div className="control-rango">
+                  <label>Brillo <span>{brightness}%</span></label>
+                  <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(e.target.value)} disabled={!image} />
+              </div>
+              <div className="control-rango">
+                  <label>Contraste <span>{contrast}%</span></label>
+                  <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(e.target.value)} disabled={!image} />
               </div>
 
-              {image && (
-                  <aside className="panel-herramientas">
-                      <div className="grupo-herramientas" style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                          <button onClick={undo} disabled={historyIndex <= 0} className="btn btn-filtro" style={{flex: 1}}>Deshacer</button>
-                          <button onClick={redo} disabled={historyIndex >= history.length - 1} className="btn btn-filtro" style={{flex: 1}}>Rehacer</button>
-                      </div>
+              <h3 style={{marginTop: '2rem'}}>Historial</h3>
+              <div className="history-controls">
+                  <button onClick={undo} disabled={historyIndex <= 0} className="btn-filtro"><Undo size={14}/> Deshacer</button>
+                  <button onClick={redo} disabled={historyIndex >= history.length - 1} className="btn-filtro"><Redo size={14}/> Rehacer</button>
+              </div>
+            </aside>
+        </div>
+      </div>
 
-                      <div className="grupo-herramientas">
-                          <h3>Efectos Creativos</h3>
-                          <div className="grid-filtros">
-                              <button onClick={filterSepia} className="btn btn-filtro">Sepia</button>
-                              <button onClick={filterInvert} className="btn btn-filtro">Invertir</button>
-                              <button onClick={filterBinary} className="btn btn-filtro">Binario</button>
-                              <button onClick={filterGrayscale} className="btn btn-filtro">Grises</button>
-                          </div>
-                      </div>
+      {/* MODAL EXPORTACIÓN */}
+      <AnimatePresence>
+        {showExportModal && (
+          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div className="modal-content glassmorphism" initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+              <div className="modal-header">
+                <h2>Exportación Avanzada</h2>
+                <button onClick={() => setShowExportModal(false)} className="btn-close"><X size={20}/></button>
+              </div>
+              <div className="modal-body">
+                <button onClick={() => exportImage('png')} className="btn btn-primario" style={{width:'100%', marginBottom:10}}>PNG (Alta Calidad)</button>
+                <button onClick={() => exportImage('jpeg', 0.8)} className="btn btn-secundario" style={{width:'100%', marginBottom:10}}>JPG (Optimizado)</button>
+                <button onClick={() => exportImage('webp', 0.9)} className="btn btn-secundario" style={{width:'100%'}}>WebP (Moderno)</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-                      <div className="grupo-herramientas">
-                          <h3>Ajustes (Base)</h3>
-                          <div className="control-rango">
-                              <label>Brillo <span>{brightness}%</span></label>
-                              <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(e.target.value)} />
-                          </div>
-                          <div className="control-rango">
-                              <label>Contraste <span>{contrast}%</span></label>
-                              <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(e.target.value)} />
-                          </div>
-                      </div>
-
-                      <div className="grupo-herramientas mt-auto">
-                          <button onClick={resetAll} className="btn btn-reset">
-                              Restaurar Original
-                          </button>
-                      </div>
-                  </aside>
-              )}
-          </div>
-      </main>
+      {/* MODAL INFO */}
+      <AnimatePresence>
+        {showInfoModal && (
+          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div className="modal-content glassmorphism" initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+              <div className="modal-header">
+                <h2>Manual de Uso</h2>
+                <button onClick={() => setShowInfoModal(false)} className="btn-close"><X size={20}/></button>
+              </div>
+              <div className="modal-body" style={{maxHeight:'60vh', overflowY:'auto'}}>
+                <p>Bienvenido a <strong>PixelPro Studio V2</strong>.</p>
+                <ul>
+                  <li><strong>Panel Izquierdo:</strong> Filtros y efectos visuales.</li>
+                  <li><strong>Panel Central:</strong> Lienzo de renderizado acelerado.</li>
+                  <li><strong>Panel Derecho:</strong> Ajustes básicos e historial seguro de 10 pasos.</li>
+                </ul>
+                <p>Tu privacidad está garantizada ya que todas las fotos se procesan en tu navegador de forma local.</p>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }
