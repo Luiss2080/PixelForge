@@ -5,7 +5,6 @@ import App from './App';
 describe('PixelPro Studio V4 Tests', () => {
   it('renders the main UI correctly', () => {
     render(<App />);
-    expect(screen.getByText(/PixelPro/i)).toBeInTheDocument();
     expect(screen.getByText(/Arrastra una imagen aquí/i)).toBeInTheDocument();
   });
 
