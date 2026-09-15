@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Settings, Info, X } from 'lucide-react';
 import './index.css';
+import './layout.css';
 
 export default function App() {
   const canvasRef = useRef(null);
