@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Info, X, UploadCloud } from 'lucide-react';
+import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Info, X, UploadCloud, Moon, Sun, Type } from 'lucide-react';
 import './index.css';
 import './layout.css';
 
@@ -11,6 +11,7 @@ export default function App() {
   const [image, setImage] = useState(null);
   const [history, setHistory] = useState([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+  const [theme, setTheme] = useState('dark');
   
   // Parametric Filters
   const [brightness, setBrightness] = useState(100);
@@ -22,6 +23,8 @@ export default function App() {
 
   const [showExportModal, setShowExportModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showWatermarkModal, setShowWatermarkModal] = useState(false);
+  const [watermarkText, setWatermarkText] = useState('PixelPro');
   const [isDragging, setIsDragging] = useState(false);
   
   const MAX_HISTORY = 10;
@@ -36,12 +39,9 @@ export default function App() {
        return;
     }
 
-    // Apply parametric CSS filters via canvas ctx.filter
     ctx.filter = `brightness(${brightness}%) contrast(${contrast}%) saturate(${saturate}%) hue-rotate(${hue}deg) blur(${blur}px)`;
-    
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Handle rotation around center
     ctx.save();
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate((rotation * Math.PI) / 180);
@@ -58,7 +58,6 @@ export default function App() {
       const img = new Image();
       img.onload = () => {
         const canvas = canvasRef.current;
-        // Swap dimensions if rotated 90 or 270 degrees initially? We reset rotation to 0 on load.
         canvas.width = img.width;
         canvas.height = img.height;
         
@@ -83,7 +82,6 @@ export default function App() {
 
   const handleImageUpload = (e) => loadImageFromFile(e.target.files[0]);
 
-  // Drag and Drop Handlers
   const handleDragOver = (e) => { e.preventDefault(); setIsDragging(true); };
   const handleDragLeave = (e) => { e.preventDefault(); setIsDragging(false); };
   const handleDrop = (e) => {
@@ -95,9 +93,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    if (image && historyIndex === 0) {
-      renderCanvas();
-    }
+    if (image && historyIndex === 0) renderCanvas();
   }, [brightness, contrast, saturate, hue, blur, rotation, image, historyIndex, renderCanvas]);
 
   const saveHistory = () => {
@@ -112,15 +108,37 @@ export default function App() {
     setHistoryIndex(newHistory.length - 1);
   };
 
-  // For complex pixel filters (Sepia, B/W) we apply and then save to history.
-  // Parametric changes are real-time and we only save history if we "Apply" them or if we trigger a pixel filter.
-  // For V3 MVP, we just render param filters live.
+  const undo = () => {
+    if (historyIndex > 0) {
+      setHistoryIndex(prev => prev - 1);
+      renderCanvas(history[historyIndex - 1], true);
+    }
+  };
+
+  const redo = () => {
+    if (historyIndex < history.length - 1) {
+      setHistoryIndex(prev => prev + 1);
+      renderCanvas(history[historyIndex + 1], true);
+    }
+  };
+
+  const applyWatermark = () => {
+    if (!image) return;
+    renderCanvas();
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    ctx.font = 'bold 48px sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.textAlign = 'right';
+    ctx.fillText(watermarkText, canvas.width - 20, canvas.height - 30);
+    saveHistory();
+    setShowWatermarkModal(false);
+  };
 
   const exportImage = (format, quality = 0.9) => {
     if (!image) return;
-    const canvas = canvasRef.current;
-    // We render the final canvas state before exporting
     renderCanvas();
+    const canvas = canvasRef.current;
     const mime = `image/${format}`;
     const url = canvas.toDataURL(mime, quality);
     const a = document.createElement('a');
@@ -132,18 +150,24 @@ export default function App() {
 
   const rotateImage = () => {
     setRotation(prev => (prev + 90) % 360);
-    // Note: To properly support rotation in canvas size, width and height must swap for 90/270.
-    // For V3 simplicity, we rotate inside the existing canvas bounds.
+  };
+
+  const toggleTheme = () => {
+    setTheme(prev => prev === 'dark' ? 'light' : 'dark');
   };
 
   return (
-    <div className="v3-layout" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
-      <div className="background-animation"></div>
-      <div className="orbe orbe-1"></div>
-      <div className="orbe orbe-2"></div>
+    <div className={`v3-layout ${theme}-theme`} style={theme === 'light' ? { background: '#f0f0f0', color: '#111' } : {}} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+      {theme === 'dark' && (
+        <>
+          <div className="background-animation"></div>
+          <div className="orbe orbe-1"></div>
+          <div className="orbe orbe-2"></div>
+        </>
+      )}
 
       {/* DOCK FLOTANTE */}
-      <motion.nav className="floating-dock" initial={{ y: 100 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 100 }}>
+      <motion.nav className="floating-dock" style={theme === 'light' ? { background: 'rgba(0,0,0,0.1)' } : {}} initial={{ y: 100 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 100 }}>
          <button onClick={() => fileInputRef.current.click()} className="dock-btn">
             <UploadCloud size={24} />
             <span>Cargar</span>
@@ -152,11 +176,11 @@ export default function App() {
          
          <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 0.5rem' }}></div>
 
-         <button onClick={() => setHistoryIndex(prev => prev > 0 ? prev - 1 : prev)} disabled={historyIndex <= 0} className="dock-btn">
+         <button onClick={undo} disabled={historyIndex <= 0} className="dock-btn">
             <Undo size={24} />
             <span>Deshacer</span>
          </button>
-         <button onClick={() => setHistoryIndex(prev => prev < history.length - 1 ? prev + 1 : prev)} disabled={historyIndex >= history.length - 1} className="dock-btn">
+         <button onClick={redo} disabled={historyIndex >= history.length - 1} className="dock-btn">
             <Redo size={24} />
             <span>Rehacer</span>
          </button>
@@ -164,12 +188,20 @@ export default function App() {
             <RotateCw size={24} />
             <span>Rotar</span>
          </button>
+         <button onClick={() => setShowWatermarkModal(true)} disabled={!image} className="dock-btn">
+            <Type size={24} />
+            <span>Marca</span>
+         </button>
 
          <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 0.5rem' }}></div>
 
          <button onClick={() => setShowExportModal(true)} disabled={!image} className="dock-btn">
             <Download size={24} />
             <span>Exportar</span>
+         </button>
+         <button onClick={toggleTheme} className="dock-btn">
+            {theme === 'dark' ? <Sun size={24}/> : <Moon size={24}/>}
+            <span>Tema</span>
          </button>
          <button onClick={() => setShowInfoModal(true)} className="dock-btn">
             <Info size={24} />
@@ -179,27 +211,28 @@ export default function App() {
 
       <div className="workspace-v3">
           {image && (
-            <aside className="sidebar-v3 glassmorphism">
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'white' }}>Filtros Pro</h3>
+            <aside className="sidebar-v3 glassmorphism" style={theme === 'light' ? { background: 'rgba(255,255,255,0.8)' } : {}}>
+              <h3 style={{ fontSize: '1.2rem', fontWeight: 600 }}>Filtros Pro</h3>
+              <p style={{fontSize:'0.75rem'}}>Historial: {historyIndex + 1}/{history.length} (Max: {MAX_HISTORY})</p>
               
               <div className="slider-group">
-                  <label>Brillo <span>{brightness}%</span></label>
+                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Brillo <span>{brightness}%</span></label>
                   <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(e.target.value)} />
               </div>
               <div className="slider-group">
-                  <label>Contraste <span>{contrast}%</span></label>
+                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Contraste <span>{contrast}%</span></label>
                   <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(e.target.value)} />
               </div>
               <div className="slider-group">
-                  <label>Saturación <span>{saturate}%</span></label>
+                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Saturación <span>{saturate}%</span></label>
                   <input type="range" min="0" max="200" value={saturate} onChange={(e) => setSaturate(e.target.value)} />
               </div>
               <div className="slider-group">
-                  <label>Tono (Hue) <span>{hue}°</span></label>
+                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Tono (Hue) <span>{hue}°</span></label>
                   <input type="range" min="0" max="360" value={hue} onChange={(e) => setHue(e.target.value)} />
               </div>
               <div className="slider-group">
-                  <label>Desenfoque <span>{blur}px</span></label>
+                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Desenfoque <span>{blur}px</span></label>
                   <input type="range" min="0" max="20" value={blur} onChange={(e) => setBlur(e.target.value)} />
               </div>
             </aside>
@@ -209,21 +242,21 @@ export default function App() {
               <canvas ref={canvasRef} style={{ display: image ? 'block' : 'none' }}></canvas>
               {!image && (
                   <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="mensaje-vacio">
-                      <ImageIcon size={64} className="icono-flotante" style={{ color: 'rgba(255,255,255,0.4)', marginBottom: '1rem' }} />
-                      <span style={{ fontSize: '1.2rem', color: 'rgba(255,255,255,0.7)' }}>Arrastra una imagen aquí o usa el dock inferior</span>
+                      <ImageIcon size={64} className="icono-flotante" style={{ color: theme === 'light' ? '#555' : 'rgba(255,255,255,0.4)', marginBottom: '1rem' }} />
+                      <span style={{ fontSize: '1.2rem', color: theme === 'light' ? '#333' : 'rgba(255,255,255,0.7)' }}>Arrastra una imagen aquí o usa el dock inferior</span>
                   </motion.div>
               )}
           </div>
       </div>
 
-      {/* MODAL EXPORTACIÓN */}
+      {/* MODALES */}
       <AnimatePresence>
         {showExportModal && (
           <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <motion.div className="modal-content glassmorphism" initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
                 <h2>Exportación Pro</h2>
-                <button onClick={() => setShowExportModal(false)} className="btn-close"><X size={20}/></button>
+                <button onClick={() => setShowExportModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
                 <button onClick={() => exportImage('png')} className="btn btn-primario" style={{width:'100%', marginBottom:10}}>PNG (Calidad Estudio)</button>
@@ -233,25 +266,36 @@ export default function App() {
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
 
-      {/* MODAL INFO */}
-      <AnimatePresence>
-        {showInfoModal && (
+        {showWatermarkModal && (
           <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <motion.div className="modal-content glassmorphism" initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2>PixelPro Studio V3 Ultimate</h2>
-                <button onClick={() => setShowInfoModal(false)} className="btn-close"><X size={20}/></button>
+                <h2>Añadir Marca de Agua</h2>
+                <button onClick={() => setShowWatermarkModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
-                <p>Nuevas características V3:</p>
+                <input type="text" value={watermarkText} onChange={e => setWatermarkText(e.target.value)} style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', borderRadius: '0.5rem', border: '1px solid #ccc' }} />
+                <button onClick={applyWatermark} className="btn btn-primario" style={{width:'100%'}}>Aplicar Marca de Agua</button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {showInfoModal && (
+          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+              <div className="modal-header">
+                <h2>PixelPro Studio V4</h2>
+                <button onClick={() => setShowInfoModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
+              </div>
+              <div className="modal-body">
+                <p>Nuevas características V4:</p>
                 <ul>
-                  <li><strong>Drag & Drop:</strong> Arrastra fotos directamente al lienzo.</li>
-                  <li><strong>Filtros Paramétricos:</strong> Ajusta Desenfoque, Tono, y Saturación en tiempo real usando aceleración por hardware.</li>
-                  <li><strong>Floating Dock:</strong> Una barra estilo macOS más intuitiva y animada.</li>
+                  <li><strong>Tests Automatizados:</strong> Estabilidad garantizada con Vitest.</li>
+                  <li><strong>Marca de Agua:</strong> Protege tus creaciones.</li>
+                  <li><strong>Modo Claro/Oscuro:</strong> Cambia la estética de la app.</li>
                 </ul>
-                <p>El código y la privacidad están 100% garantizados localmente.</p>
               </div>
             </motion.div>
           </motion.div>
