@@ -205,7 +205,7 @@ export default function App() {
             </aside>
           )}
 
-          <div className={\`canvas-container \${isDragging ? 'drag-active' : ''}\`}>
+          <div className={`canvas-container ${isDragging ? 'drag-active' : ''}`}>
               <canvas ref={canvasRef} style={{ display: image ? 'block' : 'none' }}></canvas>
               {!image && (
                   <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="mensaje-vacio">
