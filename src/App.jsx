@@ -55,9 +55,44 @@ export default function App() {
   const [showWatermarkModal, setShowWatermarkModal] = useState(false);
   const [watermarkText, setWatermarkText] = useState('PixelPro');
   const [isDragging, setIsDragging] = useState(false);
-  
+
+  /** @type {React.MutableRefObject<HTMLButtonElement>} Botón "cerrar" del modal activo, para enfocarlo al abrir */
+  const modalCloseButtonRef = useRef(null);
+
   /** @constant {number} Límite máximo de pasos en el historial para evitar fugas de memoria RAM */
   const MAX_HISTORY = 10;
+
+  const isAnyModalOpen = showExportModal || showInfoModal || showWatermarkModal;
+
+  /** Cierra cualquier modal que esté actualmente abierto */
+  const closeAllModals = () => {
+    setShowExportModal(false);
+    setShowWatermarkModal(false);
+    setShowInfoModal(false);
+  };
+
+  /**
+   * Accesibilidad de teclado: permite cerrar el modal activo con la tecla Escape,
+   * y mueve el foco a su botón de cierre apenas se abre (para usuarios de teclado
+   * y lectores de pantalla, que de otro modo quedarían con el foco "perdido" en
+   * el botón que abrió el modal).
+   */
+  useEffect(() => {
+    if (!isAnyModalOpen) return;
+
+    modalCloseButtonRef.current?.focus();
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') closeAllModals();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAnyModalOpen]);
+
+  /** Cierra el modal solo si el clic fue directamente sobre el fondo (no sobre su contenido) */
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) closeAllModals();
+  };
 
   /**
    * Dibuja la imagen en el Canvas aplicando los filtros actuales o restaurando un estado previo.
@@ -383,12 +418,14 @@ export default function App() {
 
           {/* CONTENEDOR DEL CANVAS Y MENSAJES DE ARRASTRAR */}
           <div className={`canvas-container ${isDragging ? 'drag-active' : ''}`}>
-              <canvas 
-                 ref={canvasRef} 
-                 style={{ 
-                   display: image ? 'block' : 'none', 
-                   transform: `scale(${zoom})`, 
-                   transformOrigin: 'center center' 
+              <canvas
+                 ref={canvasRef}
+                 role="img"
+                 aria-label={image ? `Vista previa de la imagen editada, zoom ${Math.round(zoom * 100)}%` : 'Sin imagen cargada'}
+                 style={{
+                   display: image ? 'block' : 'none',
+                   transform: `scale(${zoom})`,
+                   transformOrigin: 'center center'
                  }}>
               </canvas>
               {!image && (
@@ -407,11 +444,11 @@ export default function App() {
         
         {/* MODAL DE EXPORTACIÓN */}
         {showExportModal && (
-          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+          <motion.div className="modal-backdrop" onClick={handleBackdropClick} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div role="dialog" aria-modal="true" aria-labelledby="export-modal-title" className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2>Exportación Pro</h2>
-                <button onClick={() => setShowExportModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
+                <h2 id="export-modal-title">Exportación Pro</h2>
+                <button ref={modalCloseButtonRef} onClick={() => setShowExportModal(false)} className="btn-close" aria-label="Cerrar" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
                 <button onClick={() => exportImage('png')} className="btn btn-primario" style={{width:'100%', marginBottom:10}}>PNG (Calidad Estudio)</button>
@@ -424,19 +461,21 @@ export default function App() {
 
         {/* MODAL DE MARCA DE AGUA */}
         {showWatermarkModal && (
-          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+          <motion.div className="modal-backdrop" onClick={handleBackdropClick} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div role="dialog" aria-modal="true" aria-labelledby="watermark-modal-title" className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2>Añadir Marca de Agua</h2>
-                <button onClick={() => setShowWatermarkModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
+                <h2 id="watermark-modal-title">Añadir Marca de Agua</h2>
+                <button ref={modalCloseButtonRef} onClick={() => setShowWatermarkModal(false)} className="btn-close" aria-label="Cerrar" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
-                <input 
-                  type="text" 
-                  value={watermarkText} 
-                  onChange={e => setWatermarkText(e.target.value)} 
+                <label htmlFor="watermark-text-input" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem' }}>Texto de la marca de agua</label>
+                <input
+                  id="watermark-text-input"
+                  type="text"
+                  value={watermarkText}
+                  onChange={e => setWatermarkText(e.target.value)}
                   placeholder="Tu texto aquí"
-                  style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', borderRadius: '0.5rem', border: '1px solid #ccc' }} 
+                  style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', borderRadius: '0.5rem', border: '1px solid #ccc' }}
                 />
                 <button onClick={applyWatermark} className="btn btn-primario" style={{width:'100%'}}>Aplicar Texto</button>
               </div>
@@ -446,11 +485,11 @@ export default function App() {
 
         {/* MODAL DE AYUDA E INFORMACIÓN */}
         {showInfoModal && (
-          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+          <motion.div className="modal-backdrop" onClick={handleBackdropClick} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div role="dialog" aria-modal="true" aria-labelledby="info-modal-title" className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2>PixelPro Studio V5</h2>
-                <button onClick={() => setShowInfoModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
+                <h2 id="info-modal-title">PixelPro Studio V5</h2>
+                <button ref={modalCloseButtonRef} onClick={() => setShowInfoModal(false)} className="btn-close" aria-label="Cerrar" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
                 <p>Nuevas características V5 (Refinamiento Total):</p>
