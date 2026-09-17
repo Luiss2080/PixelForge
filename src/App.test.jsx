@@ -4,8 +4,8 @@
  * Verifica la integridad estructural de PixelPro Studio V5.
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import App from './App';
 
 describe('PixelPro Studio V5 - Suite de Pruebas', () => {
@@ -71,6 +71,86 @@ describe('PixelPro Studio V5 - Suite de Pruebas', () => {
     // Ahora el modal debe estar en pantalla
     expect(screen.getByText(/PixelPro Studio V5/i)).toBeInTheDocument();
     expect(screen.getByText(/Controles de Zoom:/i)).toBeInTheDocument();
+  });
+
+  describe('con una imagen cargada', () => {
+    // jsdom crea un <img> real (HTMLImageElement) pero nunca decodifica la imagen
+    // (no hay red ni códecs), así que `onload` jamás se dispara por sí solo.
+    // Interceptamos el setter de `src` en el prototipo para fijar unas dimensiones
+    // de prueba y disparar el evento `load` manualmente, sin dejar de ser una
+    // instancia real de HTMLImageElement (necesario para canvas.drawImage).
+    let originalSrcDescriptor;
+
+    beforeEach(() => {
+      originalSrcDescriptor = Object.getOwnPropertyDescriptor(window.HTMLImageElement.prototype, 'src');
+      Object.defineProperty(window.HTMLImageElement.prototype, 'src', {
+        configurable: true,
+        get() {
+          return originalSrcDescriptor.get.call(this);
+        },
+        set(value) {
+          originalSrcDescriptor.set.call(this, value);
+          this.width = 10;
+          this.height = 10;
+          this.dispatchEvent(new Event('load'));
+        },
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window.HTMLImageElement.prototype, 'src', originalSrcDescriptor);
+    });
+
+    const loadTestImage = async () => {
+      const fileInput = document.querySelector('input[type="file"]');
+      const file = new File(['contenido'], 'foto.png', { type: 'image/png' });
+      fireEvent.change(fileInput, { target: { files: [file] } });
+      await waitFor(() => expect(screen.getByText(/Filtros Pro/i)).toBeInTheDocument());
+    };
+
+    /**
+     * Test 5 (Rendimiento/UX): aplicar un filtro pixel-a-pixel es la operación
+     * más costosa de la app (recorre cada canal de cada píxel). Antes de este
+     * cambio corría de forma 100% síncrona: no había ninguna señal de que algo
+     * estaba pasando, y en una imagen grande la pestaña se sentiría "congelada".
+     * Ahora debe mostrar un indicador de "Procesando..." mientras el filtro
+     * corre, y ocultarlo al terminar.
+     */
+    it('Debe mostrar y luego ocultar el indicador de procesamiento al aplicar un filtro', async () => {
+      render(<App />);
+      await loadTestImage();
+
+      const grayscaleBtn = screen.getByText(/Blanco y Negro/i).closest('button');
+      fireEvent.click(grayscaleBtn);
+
+      expect(screen.getByRole('status')).toHaveTextContent(/Procesando imagen/i);
+
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    });
+
+    /**
+     * Test 6 (Rendimiento/UX): mientras se procesa un filtro, no debería ser
+     * posible disparar otra operación destructiva sobre el mismo canvas (por
+     * ejemplo, deshacer a mitad de un filtro en curso podría corromper el
+     * historial). Los botones de filtro y de deshacer deben deshabilitarse.
+     */
+    it('Debe deshabilitar los botones de filtro y deshacer mientras procesa', async () => {
+      render(<App />);
+      await loadTestImage();
+
+      const grayscaleBtn = screen.getByText(/Blanco y Negro/i).closest('button');
+      const invertBtn = screen.getByText(/Invertir Colores/i).closest('button');
+
+      fireEvent.click(grayscaleBtn);
+
+      expect(grayscaleBtn).toBeDisabled();
+      expect(invertBtn).toBeDisabled();
+
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+
+      expect(grayscaleBtn).not.toBeDisabled();
+      expect(invertBtn).not.toBeDisabled();
+    });
   });
 
 });
