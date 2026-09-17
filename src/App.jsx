@@ -8,6 +8,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Info, X, UploadCloud, Moon, Sun, Type, ZoomIn, ZoomOut, Contrast, Settings } from 'lucide-react';
+import { invertPixel, grayscalePixel, applyFilterToImageData } from './filters';
 import './index.css';
 import './layout.css';
 
@@ -59,6 +60,9 @@ export default function App() {
   /** @type {React.MutableRefObject<HTMLButtonElement>} Botón "cerrar" del modal activo, para enfocarlo al abrir */
   const modalCloseButtonRef = useRef(null);
 
+  /** @type {[string|null, Function]} Mensaje de error visible tras un intento de carga fallido */
+  const [uploadError, setUploadError] = useState(null);
+
   /** @constant {number} Límite máximo de pasos en el historial para evitar fugas de memoria RAM */
   const MAX_HISTORY = 10;
 
@@ -93,6 +97,10 @@ export default function App() {
   const handleBackdropClick = (e) => {
     if (e.target === e.currentTarget) closeAllModals();
   };
+
+  /** @constant {number} Límite de tamaño de archivo aceptado (25 MB): más allá de esto, leer el
+   * archivo a Base64 y procesarlo píxel a píxel puede congelar la pestaña por varios segundos. */
+  const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 
   /**
    * Dibuja la imagen en el Canvas aplicando los filtros actuales o restaurando un estado previo.
@@ -129,19 +137,60 @@ export default function App() {
 
   /**
    * Carga una imagen en memoria desde un archivo (File) subido o arrastrado.
+   * Valida tipo y tamaño antes de leer el archivo, y cubre los tres puntos
+   * donde una carga puede fallar en silencio: lectura del archivo (FileReader),
+   * decodificación de la imagen (Image) y lectura de píxeles del canvas
+   * (getImageData, que puede lanzar SecurityError con un SVG que referencia
+   * recursos externos y "mancha" el lienzo).
    * @param {File} file - El archivo de imagen seleccionado por el usuario.
    */
   const loadImageFromFile = (file) => {
-    if (!file || !file.type.startsWith('image/')) return; // Validación de tipo MIME
-    
+    setUploadError(null);
+
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setUploadError(`"${file.name}" no es un archivo de imagen soportado.`);
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      const limitMb = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024));
+      setUploadError(`"${file.name}" pesa más de ${limitMb} MB. Prueba con una imagen más liviana.`);
+      return;
+    }
+
     const reader = new FileReader();
+
+    reader.onerror = () => {
+      setUploadError('No se pudo leer el archivo. Puede estar dañado o ser inaccesible.');
+    };
+
     reader.onload = (event) => {
       const img = new Image();
+
+      img.onerror = () => {
+        setUploadError('El archivo no pudo decodificarse como imagen. Puede estar corrupto.');
+      };
+
       img.onload = () => {
         const canvas = canvasRef.current;
         canvas.width = img.width;
         canvas.height = img.height;
-        
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        let imgData;
+        try {
+          imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        } catch {
+          // SecurityError: ocurre con SVGs que referencian recursos externos,
+          // que "manchan" (taint) el canvas e impiden leer sus píxeles.
+          setUploadError('Esta imagen no puede editarse a nivel de píxel (formato restringido por el navegador).');
+          return;
+        }
+
         // Resetear todos los estados a su valor por defecto al cargar nueva imagen
         setImage(img);
         setBrightness(100);
@@ -151,11 +200,6 @@ export default function App() {
         setBlur(0);
         setRotation(0);
         setZoom(1);
-        
-        // Renderizar la imagen inicial y guardarla en la posición 0 del historial
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         setHistory([imgData]);
         setHistoryIndex(0);
       };
@@ -225,6 +269,8 @@ export default function App() {
 
   /**
    * Aplica un algoritmo matemático iterativo pixel-por-pixel (CPU based).
+   * La matemática de cada filtro vive en `./filters.js` como función pura,
+   * para poder probarla sin necesidad de un <canvas> real.
    * @param {Function} filterFn - Callback que recibe (r, g, b) y retorna los nuevos valores de canal.
    */
   const applyPixelFilter = (filterFn) => {
@@ -232,29 +278,19 @@ export default function App() {
     renderCanvas(); // Renderiza estado actual (Filtros paramétricos) a crudo
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    
+
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imgData.data;
-    
-    for (let i = 0; i < data.length; i += 4) {
-        const result = filterFn(data[i], data[i+1], data[i+2]);
-        data[i] = result.r;
-        data[i+1] = result.g;
-        data[i+2] = result.b;
-    }
-    
+    applyFilterToImageData(imgData, filterFn);
+
     ctx.putImageData(imgData, 0, 0);
     saveHistory(); // Guardar el cambio destructivo en el historial
   };
 
   /** Filtro rápido: Invierte todos los colores matemáticamente */
-  const applyInvert = () => applyPixelFilter((r, g, b) => ({ r: 255 - r, g: 255 - g, b: 255 - b }));
-  
+  const applyInvert = () => applyPixelFilter(invertPixel);
+
   /** Filtro rápido: Convierte la imagen a escala de grises perfecta */
-  const applyGrayscale = () => applyPixelFilter((r, g, b) => {
-      const gray = (r * 0.3) + (g * 0.59) + (b * 0.11);
-      return { r: gray, g: gray, b: gray };
-  });
+  const applyGrayscale = () => applyPixelFilter(grayscalePixel);
 
   /**
    * Dibuja el texto de la marca de agua permanentemente en la esquina inferior derecha.
@@ -307,6 +343,25 @@ export default function App() {
 
   return (
     <div className={`v3-layout ${theme}-theme`} style={theme === 'light' ? { background: '#f0f0f0', color: '#111' } : {}} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+      {/* BANNER DE ERROR DE CARGA (archivo inválido, demasiado grande, corrupto, etc.) */}
+      {uploadError && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="upload-error-banner"
+        >
+          <span>{uploadError}</span>
+          <button
+            type="button"
+            onClick={() => setUploadError(null)}
+            aria-label="Descartar mensaje de error"
+            className="upload-error-dismiss"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Fondo animado sólo en modo oscuro para contraste visual */}
       {theme === 'dark' && (
         <>
