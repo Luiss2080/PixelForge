@@ -55,9 +55,15 @@ export default function App() {
   const [showWatermarkModal, setShowWatermarkModal] = useState(false);
   const [watermarkText, setWatermarkText] = useState('PixelPro');
   const [isDragging, setIsDragging] = useState(false);
-  
+
+  /** @type {[boolean, Function]} Indica si un filtro pixel-a-pixel se está aplicando (operación bloqueante) */
+  const [isProcessing, setIsProcessing] = useState(false);
+
   /** @constant {number} Límite máximo de pasos en el historial para evitar fugas de memoria RAM */
   const MAX_HISTORY = 10;
+
+  /** @constant {number} Píxeles procesados por "tanda" antes de ceder el hilo principal al navegador */
+  const PIXEL_CHUNK_SIZE = 250000;
 
   /**
    * Dibuja la imagen en el Canvas aplicando los filtros actuales o restaurando un estado previo.
@@ -189,32 +195,65 @@ export default function App() {
   };
 
   /**
-   * Aplica un algoritmo matemático iterativo pixel-por-pixel (CPU based).
+   * Espera al siguiente frame de pintado del navegador. Se usa entre "tandas"
+   * de procesamiento de píxeles para cederle el hilo principal al navegador
+   * (permitiendo repintar la UI, responder a scroll, etc.) en vez de bloquearlo
+   * de punta a punta con un solo bucle gigante.
+   */
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
+  /**
+   * Aplica un algoritmo matemático iterativo pixel-por-pixel (CPU based), en
+   * tandas de PIXEL_CHUNK_SIZE píxeles, cediendo el hilo principal entre cada
+   * una. En una imagen grande (varios megapíxeles) este bucle es la parte más
+   * costosa de la app: sin trocear, corre de una sola vez y congela la pestaña
+   * (scroll, animaciones, cualquier otro input) hasta terminar.
    * @param {Function} filterFn - Callback que recibe (r, g, b) y retorna los nuevos valores de canal.
    */
-  const applyPixelFilter = (filterFn) => {
-    if (!image) return;
-    renderCanvas(); // Renderiza estado actual (Filtros paramétricos) a crudo
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imgData.data;
-    
-    for (let i = 0; i < data.length; i += 4) {
-        const result = filterFn(data[i], data[i+1], data[i+2]);
-        data[i] = result.r;
-        data[i+1] = result.g;
-        data[i+2] = result.b;
+  const applyPixelFilter = async (filterFn) => {
+    if (!image || isProcessing) return;
+
+    setIsProcessing(true);
+    // Deja que React pinte el estado "Procesando..." antes de empezar el trabajo pesado;
+    // si no cedemos el hilo aquí, el indicador nunca llegaría a mostrarse en pantalla.
+    await nextFrame();
+
+    try {
+      renderCanvas(); // Renderiza estado actual (Filtros paramétricos) a crudo
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imgData.data;
+      const totalPixels = data.length / 4;
+
+      for (let pixelStart = 0; pixelStart < totalPixels; pixelStart += PIXEL_CHUNK_SIZE) {
+        const pixelEnd = Math.min(pixelStart + PIXEL_CHUNK_SIZE, totalPixels);
+
+        for (let p = pixelStart; p < pixelEnd; p++) {
+          const i = p * 4;
+          const result = filterFn(data[i], data[i + 1], data[i + 2]);
+          data[i] = result.r;
+          data[i + 1] = result.g;
+          data[i + 2] = result.b;
+        }
+
+        // Si quedan más tandas, cedemos el hilo antes de continuar.
+        if (pixelEnd < totalPixels) {
+          await nextFrame();
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+      saveHistory(); // Guardar el cambio destructivo en el historial
+    } finally {
+      setIsProcessing(false);
     }
-    
-    ctx.putImageData(imgData, 0, 0);
-    saveHistory(); // Guardar el cambio destructivo en el historial
   };
 
   /** Filtro rápido: Invierte todos los colores matemáticamente */
   const applyInvert = () => applyPixelFilter((r, g, b) => ({ r: 255 - r, g: 255 - g, b: 255 - b }));
-  
+
   /** Filtro rápido: Convierte la imagen a escala de grises perfecta */
   const applyGrayscale = () => applyPixelFilter((r, g, b) => {
       const gray = (r * 0.3) + (g * 0.59) + (b * 0.11);
@@ -283,30 +322,30 @@ export default function App() {
 
       {/* DOCK FLOTANTE INFERIOR (Herramientas Principales) */}
       <motion.nav className="floating-dock" style={theme === 'light' ? { background: 'rgba(0,0,0,0.1)' } : {}} initial={{ y: 100 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 100 }}>
-         <button onClick={() => fileInputRef.current.click()} className="dock-btn">
+         <button onClick={() => fileInputRef.current.click()} disabled={isProcessing} className="dock-btn">
             <UploadCloud size={24} />
             <span>Cargar</span>
          </button>
          <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="oculto" />
-         
+
          <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 0.5rem' }}></div>
 
          {/* Controles de Historial */}
-         <button onClick={undo} disabled={historyIndex <= 0} className="dock-btn">
+         <button onClick={undo} disabled={historyIndex <= 0 || isProcessing} className="dock-btn">
             <Undo size={24} />
             <span>Deshacer</span>
          </button>
-         <button onClick={redo} disabled={historyIndex >= history.length - 1} className="dock-btn">
+         <button onClick={redo} disabled={historyIndex >= history.length - 1 || isProcessing} className="dock-btn">
             <Redo size={24} />
             <span>Rehacer</span>
          </button>
-         
+
          {/* Controles de Transformación */}
-         <button onClick={rotateImage} disabled={!image} className="dock-btn">
+         <button onClick={rotateImage} disabled={!image || isProcessing} className="dock-btn">
             <RotateCw size={24} />
             <span>Rotar</span>
          </button>
-         <button onClick={() => setShowWatermarkModal(true)} disabled={!image} className="dock-btn">
+         <button onClick={() => setShowWatermarkModal(true)} disabled={!image || isProcessing} className="dock-btn">
             <Type size={24} />
             <span>Marca</span>
          </button>
@@ -325,7 +364,7 @@ export default function App() {
          <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 0.5rem' }}></div>
 
          {/* Controles del Sistema */}
-         <button onClick={() => setShowExportModal(true)} disabled={!image} className="dock-btn">
+         <button onClick={() => setShowExportModal(true)} disabled={!image || isProcessing} className="dock-btn">
             <Download size={24} />
             <span>Exportar</span>
          </button>
@@ -372,10 +411,10 @@ export default function App() {
               <hr style={{ borderColor: 'rgba(255,255,255,0.1)', margin: '1rem 0' }} />
               
               <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Filtros de Acción Rápida</h3>
-              <button onClick={applyInvert} className="btn btn-secundario" style={{width:'100%', marginBottom:'0.5rem', display: 'flex', justifyContent: 'center', gap:'0.5rem'}}>
+              <button onClick={applyInvert} disabled={isProcessing} className="btn btn-secundario" style={{width:'100%', marginBottom:'0.5rem', display: 'flex', justifyContent: 'center', gap:'0.5rem'}}>
                  <Contrast size={16}/> Invertir Colores
               </button>
-              <button onClick={applyGrayscale} className="btn btn-secundario" style={{width:'100%', display: 'flex', justifyContent: 'center', gap:'0.5rem'}}>
+              <button onClick={applyGrayscale} disabled={isProcessing} className="btn btn-secundario" style={{width:'100%', display: 'flex', justifyContent: 'center', gap:'0.5rem'}}>
                  <Settings size={16}/> Blanco y Negro
               </button>
             </aside>
@@ -396,6 +435,12 @@ export default function App() {
                       <ImageIcon size={64} className="icono-flotante" style={{ color: theme === 'light' ? '#555' : 'rgba(255,255,255,0.4)', marginBottom: '1rem' }} />
                       <span style={{ fontSize: '1.2rem', color: theme === 'light' ? '#333' : 'rgba(255,255,255,0.7)' }}>Arrastra una imagen aquí o usa el dock inferior</span>
                   </motion.div>
+              )}
+              {isProcessing && (
+                  <div className="processing-overlay" role="status" aria-live="polite">
+                      <div className="processing-spinner" aria-hidden="true"></div>
+                      <span>Procesando imagen...</span>
+                  </div>
               )}
           </div>
       </div>
