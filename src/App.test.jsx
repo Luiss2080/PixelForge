@@ -1,14 +1,14 @@
 /**
  * @file App.test.jsx
  * @description Suite de pruebas automatizadas con Vitest y React Testing Library.
- * Verifica la integridad estructural de PixelPro Studio V5.
+ * Verifica la integridad estructural de PixelForge V5.
  */
 
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect } from 'vitest';
 import App from './App';
 
-describe('PixelPro Studio V5 - Suite de Pruebas', () => {
+describe('PixelForge V5 - Suite de Pruebas', () => {
 
   /**
    * Test 1: Verifica el renderizado básico.
@@ -62,14 +62,14 @@ describe('PixelPro Studio V5 - Suite de Pruebas', () => {
     render(<App />);
     
     // El modal de V5 aún no debería existir en el DOM visible
-    expect(screen.queryByText(/PixelPro Studio V5/i)).not.toBeInTheDocument();
-    
+    expect(screen.queryByText(/PixelForge V5/i)).not.toBeInTheDocument();
+
     // Click en Info
     const infoBtn = screen.getByText(/Info/i).closest('button');
     fireEvent.click(infoBtn);
-    
+
     // Ahora el modal debe estar en pantalla
-    expect(screen.getByText(/PixelPro Studio V5/i)).toBeInTheDocument();
+    expect(screen.getByText(/PixelForge V5/i)).toBeInTheDocument();
     expect(screen.getByText(/Controles de Zoom:/i)).toBeInTheDocument();
   });
 

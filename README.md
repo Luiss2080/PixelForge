@@ -1,14 +1,14 @@
 <div align="center">
-  <img src="public/pixelpro_favicon.jpg" alt="PixelPro Studio Logo" width="150" style="border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.5);" />
-  <h1>PixelPro Studio V5 Ultimate</h1>
+  <img src="public/pixelpro_favicon.jpg" alt="PixelForge Logo" width="150" style="border-radius: 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.5);" />
+  <h1>PixelForge V5 Ultimate</h1>
   
   <p>
     <strong>El editor fotográfico de próxima generación directo en tu navegador.</strong>
   </p>
 
   <p>
-    <img src="https://img.shields.io/badge/React-18.3.1-blue?style=for-the-badge&logo=react" alt="React" />
-    <img src="https://img.shields.io/badge/Vite-5.0-646CFF?style=for-the-badge&logo=vite" alt="Vite" />
+    <img src="https://img.shields.io/badge/React-19.2-blue?style=for-the-badge&logo=react" alt="React" />
+    <img src="https://img.shields.io/badge/Vite-8.3-646CFF?style=for-the-badge&logo=vite" alt="Vite" />
     <img src="https://img.shields.io/badge/Vitest-Testing-729B1B?style=for-the-badge&logo=vitest" alt="Vitest" />
     <img src="https://img.shields.io/badge/Framer_Motion-Animations-black?style=for-the-badge&logo=framer" alt="Framer" />
   </p>
@@ -21,7 +21,7 @@
 
 ## ✨ Características Principales
 
-PixelPro Studio ha evolucionado a través de una rigurosa auditoría de Diseño Dirigido por Software (SDD). Sus herramientas comerciales incluyen:
+PixelForge ha evolucionado a través de una rigurosa auditoría de Diseño Dirigido por Software (SDD). Sus herramientas comerciales incluyen:
 
 - **🚀 Interfaz Drag & Drop:** Arrastra fotos desde tu escritorio y suéltalas en el lienzo sin complicaciones.
 - **🎨 Filtros Paramétricos en Tiempo Real:** Ajusta Brillo, Contraste, Saturación, Tono (Hue) y Desenfoque usando sliders ultra responsivos.
@@ -80,7 +80,7 @@ Para correr la suite de Vitest:
 ```bash
 npm run test
 ```
-*Garantizado Zero Bugs: Verifica las aserciones sobre estados del Historial y cambios de Tema (Dark/Light).*
+*La suite cubre renderizado inicial, estados de Historial y el cambio de Tema (Dark/Light); no cubre (todavía) la carga de imágenes ni los filtros pixel a pixel.*
 
 ---
 
@@ -88,6 +88,13 @@ npm run test
 
 - ¿Eres un desarrollador? El archivo `App.jsx` cuenta con un set completo de comentarios en español usando notación `JSDoc` explicando exhaustivamente la manipulación del contexto del Canvas.
 - Puedes leer el documento completo de uso para usuarios en el archivo [docs/manual_de_uso.md](./docs/manual_de_uso.md).
+- La carpeta [`legacy_v1/`](./legacy_v1) conserva, sin modificar, la primera versión del proyecto (HTML/CSS/JS puro, sin build ni framework). Se mantiene como referencia histórica y no forma parte de la aplicación que corre con `npm run dev`.
+
+---
+
+## 📄 Licencia
+
+Este proyecto se distribuye bajo la licencia [MIT](./LICENSE).
 
 ---
 <div align="center">

@@ -1,6 +1,6 @@
 /**
  * @file App.jsx
- * @description Componente principal de PixelPro Studio V5.
+ * @description Componente principal de PixelForge V5.
  * Gestiona el estado de la imagen, historial, filtros, zoom y modales.
  * @author Antigravity AI
  */
@@ -53,7 +53,7 @@ export default function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showWatermarkModal, setShowWatermarkModal] = useState(false);
-  const [watermarkText, setWatermarkText] = useState('PixelPro');
+  const [watermarkText, setWatermarkText] = useState('PixelForge');
   const [isDragging, setIsDragging] = useState(false);
   
   /** @constant {number} Límite máximo de pasos en el historial para evitar fugas de memoria RAM */
@@ -449,7 +449,7 @@ export default function App() {
           <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
             <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2>PixelPro Studio V5</h2>
+                <h2>PixelForge V5</h2>
                 <button onClick={() => setShowInfoModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
