@@ -349,24 +349,24 @@ export default function App() {
               <p style={{fontSize:'0.75rem'}}>Historial: {historyIndex + 1}/{history.length} (Max: {MAX_HISTORY})</p>
               
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Brillo <span>{brightness}%</span></label>
-                  <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(e.target.value)} />
+                  <label htmlFor="slider-brillo" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Brillo <span>{brightness}%</span></label>
+                  <input id="slider-brillo" type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(e.target.value)} aria-valuetext={`${brightness}%`} />
               </div>
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Contraste <span>{contrast}%</span></label>
-                  <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(e.target.value)} />
+                  <label htmlFor="slider-contraste" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Contraste <span>{contrast}%</span></label>
+                  <input id="slider-contraste" type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(e.target.value)} aria-valuetext={`${contrast}%`} />
               </div>
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Saturación <span>{saturate}%</span></label>
-                  <input type="range" min="0" max="200" value={saturate} onChange={(e) => setSaturate(e.target.value)} />
+                  <label htmlFor="slider-saturacion" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Saturación <span>{saturate}%</span></label>
+                  <input id="slider-saturacion" type="range" min="0" max="200" value={saturate} onChange={(e) => setSaturate(e.target.value)} aria-valuetext={`${saturate}%`} />
               </div>
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Tono (Hue) <span>{hue}°</span></label>
-                  <input type="range" min="0" max="360" value={hue} onChange={(e) => setHue(e.target.value)} />
+                  <label htmlFor="slider-tono" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Tono (Hue) <span>{hue}°</span></label>
+                  <input id="slider-tono" type="range" min="0" max="360" value={hue} onChange={(e) => setHue(e.target.value)} aria-valuetext={`${hue} grados`} />
               </div>
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Desenfoque <span>{blur}px</span></label>
-                  <input type="range" min="0" max="20" value={blur} onChange={(e) => setBlur(e.target.value)} />
+                  <label htmlFor="slider-desenfoque" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Desenfoque <span>{blur}px</span></label>
+                  <input id="slider-desenfoque" type="range" min="0" max="20" value={blur} onChange={(e) => setBlur(e.target.value)} aria-valuetext={`${blur} pixeles`} />
               </div>
 
               <hr style={{ borderColor: 'rgba(255,255,255,0.1)', margin: '1rem 0' }} />
