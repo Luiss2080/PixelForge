@@ -1,6 +1,6 @@
 /**
  * @file App.jsx
- * @description Componente principal de PixelPro Studio V5.
+ * @description Componente principal de PixelForge V5.
  * Gestiona el estado de la imagen, historial, filtros, zoom y modales.
  * @author Antigravity AI
  */
@@ -54,7 +54,7 @@ export default function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showWatermarkModal, setShowWatermarkModal] = useState(false);
-  const [watermarkText, setWatermarkText] = useState('PixelPro');
+  const [watermarkText, setWatermarkText] = useState('PixelForge');
   const [isDragging, setIsDragging] = useState(false);
 
   /** @type {[boolean, Function]} Indica si un filtro pixel-a-pixel se está aplicando (operación bloqueante) */
@@ -599,7 +599,7 @@ export default function App() {
           <motion.div className="modal-backdrop" onClick={handleBackdropClick} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
             <motion.div role="dialog" aria-modal="true" aria-labelledby="info-modal-title" className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2 id="info-modal-title">PixelPro Studio V5</h2>
+                <h2 id="info-modal-title">PixelForge V5</h2>
                 <button ref={modalCloseButtonRef} onClick={() => setShowInfoModal(false)} className="btn-close" aria-label="Cerrar" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">

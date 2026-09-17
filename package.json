@@ -1,7 +1,8 @@
 {
-  "name": "tmp-vite",
+  "name": "pixelforge",
   "private": true,
   "version": "0.0.0",
+  "description": "PixelForge: editor de imágenes en el navegador con filtros paramétricos y de un clic, historial de deshacer/rehacer, y manipulación de píxeles vía Canvas API, sin subir ninguna imagen a un servidor.",
   "type": "module",
   "scripts": {
     "dev": "vite",
