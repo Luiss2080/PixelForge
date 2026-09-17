@@ -4,8 +4,8 @@
  * Verifica la integridad estructural de PixelPro Studio V5.
  */
 
-import { render, screen, fireEvent } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import App from './App';
 
 describe('PixelPro Studio V5 - Suite de Pruebas', () => {
@@ -71,6 +71,85 @@ describe('PixelPro Studio V5 - Suite de Pruebas', () => {
     // Ahora el modal debe estar en pantalla
     expect(screen.getByText(/PixelPro Studio V5/i)).toBeInTheDocument();
     expect(screen.getByText(/Controles de Zoom:/i)).toBeInTheDocument();
+  });
+
+  /**
+   * Test 5 (Accesibilidad): el modal debe poder cerrarse con la tecla Escape,
+   * para usuarios de teclado que no pueden hacer clic en el botón "X".
+   */
+  it('Debe cerrar el modal de información al presionar Escape', async () => {
+    render(<App />);
+
+    const infoBtn = screen.getByText(/Info/i).closest('button');
+    fireEvent.click(infoBtn);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+
+    // Framer Motion mantiene el nodo montado durante su animación de salida
+    // (exit={{opacity:0}}) antes de desmontarlo, así que esperamos ese ciclo.
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  /**
+   * Test 6 (Accesibilidad): hacer clic en el fondo oscuro (fuera del contenido)
+   * debe cerrar el modal, un patrón estándar de diálogos accesibles.
+   */
+  it('Debe cerrar el modal al hacer clic en el fondo (backdrop)', async () => {
+    const { container } = render(<App />);
+
+    const infoBtn = screen.getByText(/Info/i).closest('button');
+    fireEvent.click(infoBtn);
+
+    const backdrop = container.querySelector('.modal-backdrop');
+    fireEvent.click(backdrop);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+  });
+
+  /**
+   * Test 7 (Accesibilidad): cada slider debe tener un <label> asociado por
+   * id/htmlFor, no solo texto visualmente cercano, para que los lectores de
+   * pantalla anuncien el control correctamente.
+   */
+  describe('con una imagen cargada', () => {
+    // jsdom crea un <img> real (HTMLImageElement) pero nunca decodifica la imagen
+    // (no hay red ni códecs), así que `onload` jamás se dispara por sí solo.
+    // Interceptamos el setter de `src` en el prototipo para fijar unas dimensiones
+    // de prueba y disparar el evento `load` manualmente, sin dejar de ser una
+    // instancia real de HTMLImageElement (necesario para canvas.drawImage).
+    let originalSrcDescriptor;
+
+    beforeEach(() => {
+      originalSrcDescriptor = Object.getOwnPropertyDescriptor(window.HTMLImageElement.prototype, 'src');
+      Object.defineProperty(window.HTMLImageElement.prototype, 'src', {
+        configurable: true,
+        get() {
+          return originalSrcDescriptor.get.call(this);
+        },
+        set(value) {
+          originalSrcDescriptor.set.call(this, value);
+          this.width = 10;
+          this.height = 10;
+          this.dispatchEvent(new Event('load'));
+        },
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window.HTMLImageElement.prototype, 'src', originalSrcDescriptor);
+    });
+
+    it('Debe asociar el label "Brillo" a su slider mediante htmlFor/id', async () => {
+      render(<App />);
+
+      const fileInput = document.querySelector('input[type="file"]');
+      const file = new File(['contenido'], 'foto.png', { type: 'image/png' });
+      fireEvent.change(fileInput, { target: { files: [file] } });
+
+      const brightnessSlider = await screen.findByLabelText(/Brillo/i);
+      expect(brightnessSlider).toHaveAttribute('type', 'range');
+    });
   });
 
 });
