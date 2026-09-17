@@ -140,15 +140,63 @@ describe('PixelPro Studio V5 - Suite de Pruebas', () => {
       Object.defineProperty(window.HTMLImageElement.prototype, 'src', originalSrcDescriptor);
     });
 
-    it('Debe asociar el label "Brillo" a su slider mediante htmlFor/id', async () => {
-      render(<App />);
-
+    const loadTestImage = async () => {
       const fileInput = document.querySelector('input[type="file"]');
       const file = new File(['contenido'], 'foto.png', { type: 'image/png' });
       fireEvent.change(fileInput, { target: { files: [file] } });
+      await waitFor(() => expect(screen.getByText(/Filtros Pro/i)).toBeInTheDocument());
+    };
+
+    it('Debe asociar el label "Brillo" a su slider mediante htmlFor/id', async () => {
+      render(<App />);
+      await loadTestImage();
 
       const brightnessSlider = await screen.findByLabelText(/Brillo/i);
       expect(brightnessSlider).toHaveAttribute('type', 'range');
+    });
+
+    /**
+     * Test 5 (Rendimiento/UX): aplicar un filtro pixel-a-pixel es la operación
+     * más costosa de la app (recorre cada canal de cada píxel). Antes de este
+     * cambio corría de forma 100% síncrona: no había ninguna señal de que algo
+     * estaba pasando, y en una imagen grande la pestaña se sentiría "congelada".
+     * Ahora debe mostrar un indicador de "Procesando..." mientras el filtro
+     * corre, y ocultarlo al terminar.
+     */
+    it('Debe mostrar y luego ocultar el indicador de procesamiento al aplicar un filtro', async () => {
+      render(<App />);
+      await loadTestImage();
+
+      const grayscaleBtn = screen.getByText(/Blanco y Negro/i).closest('button');
+      fireEvent.click(grayscaleBtn);
+
+      expect(screen.getByRole('status')).toHaveTextContent(/Procesando imagen/i);
+
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    });
+
+    /**
+     * Test 6 (Rendimiento/UX): mientras se procesa un filtro, no debería ser
+     * posible disparar otra operación destructiva sobre el mismo canvas (por
+     * ejemplo, deshacer a mitad de un filtro en curso podría corromper el
+     * historial). Los botones de filtro y de deshacer deben deshabilitarse.
+     */
+    it('Debe deshabilitar los botones de filtro y deshacer mientras procesa', async () => {
+      render(<App />);
+      await loadTestImage();
+
+      const grayscaleBtn = screen.getByText(/Blanco y Negro/i).closest('button');
+      const invertBtn = screen.getByText(/Invertir Colores/i).closest('button');
+
+      fireEvent.click(grayscaleBtn);
+
+      expect(grayscaleBtn).toBeDisabled();
+      expect(invertBtn).toBeDisabled();
+
+      await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+
+      expect(grayscaleBtn).not.toBeDisabled();
+      expect(invertBtn).not.toBeDisabled();
     });
   });
 
@@ -256,5 +304,10 @@ describe('PixelPro Studio V5 - Panel de filtros con imagen cargada', () => {
 
     // No debe lanzar al hacer clic (aplica el filtro píxel por píxel sobre el canvas mockeado).
     expect(() => fireEvent.click(grayscaleBtn)).not.toThrow();
+
+    // El filtro corre de forma asíncrona (en tandas); esperamos a que termine
+    // antes de que el test desmonte el componente, para no dejar una promesa
+    // colgada que intente tocar un canvas ya desmontado.
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
   });
 });

@@ -99,6 +99,35 @@
   transition: transform 0.3s ease;
 }
 
+.processing-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: rgba(11, 14, 20, 0.7);
+  backdrop-filter: blur(6px);
+  border-radius: 1.5rem;
+  color: #E2E8F0;
+  font-size: 0.95rem;
+  z-index: 50;
+}
+
+.processing-spinner {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.15);
+  border-top-color: #60A5FA;
+  animation: girar-spinner 0.8s linear infinite;
+}
+
+@keyframes girar-spinner {
+  to { transform: rotate(360deg); }
+}
+
 .slider-group { display: flex; flex-direction: column; gap: 0.5rem; }
 .slider-group label { display: flex; justify-content: space-between; font-size: 0.85rem; color: #E2E8F0; }
 .slider-group label span { color: #A78BFA; font-weight: bold; }
