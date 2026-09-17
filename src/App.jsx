@@ -8,6 +8,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Info, X, UploadCloud, Moon, Sun, Type, ZoomIn, ZoomOut, Contrast, Settings } from 'lucide-react';
+import { invertPixel, grayscalePixel, applyFilterToImageData } from './filters';
 import './index.css';
 import './layout.css';
 
@@ -233,6 +234,8 @@ export default function App() {
 
   /**
    * Aplica un algoritmo matemático iterativo pixel-por-pixel (CPU based).
+   * La matemática de cada filtro vive en `./filters.js` como función pura,
+   * para poder probarla sin necesidad de un <canvas> real.
    * @param {Function} filterFn - Callback que recibe (r, g, b) y retorna los nuevos valores de canal.
    */
   const applyPixelFilter = (filterFn) => {
@@ -240,29 +243,19 @@ export default function App() {
     renderCanvas(); // Renderiza estado actual (Filtros paramétricos) a crudo
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
-    
+
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imgData.data;
-    
-    for (let i = 0; i < data.length; i += 4) {
-        const result = filterFn(data[i], data[i+1], data[i+2]);
-        data[i] = result.r;
-        data[i+1] = result.g;
-        data[i+2] = result.b;
-    }
-    
+    applyFilterToImageData(imgData, filterFn);
+
     ctx.putImageData(imgData, 0, 0);
     saveHistory(); // Guardar el cambio destructivo en el historial
   };
 
   /** Filtro rápido: Invierte todos los colores matemáticamente */
-  const applyInvert = () => applyPixelFilter((r, g, b) => ({ r: 255 - r, g: 255 - g, b: 255 - b }));
-  
+  const applyInvert = () => applyPixelFilter(invertPixel);
+
   /** Filtro rápido: Convierte la imagen a escala de grises perfecta */
-  const applyGrayscale = () => applyPixelFilter((r, g, b) => {
-      const gray = (r * 0.3) + (g * 0.59) + (b * 0.11);
-      return { r: gray, g: gray, b: gray };
-  });
+  const applyGrayscale = () => applyPixelFilter(grayscalePixel);
 
   /**
    * Dibuja el texto de la marca de agua permanentemente en la esquina inferior derecha.
