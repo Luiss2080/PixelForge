@@ -7,7 +7,8 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Info, X, UploadCloud, Moon, Sun, Type, ZoomIn, ZoomOut, Contrast } from 'lucide-react';
+import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Info, X, UploadCloud, Moon, Sun, Type, ZoomIn, ZoomOut, Contrast, Settings } from 'lucide-react';
+import { invertPixel, grayscalePixel } from './filters';
 import './index.css';
 import './layout.css';
 
@@ -55,9 +56,57 @@ export default function App() {
   const [showWatermarkModal, setShowWatermarkModal] = useState(false);
   const [watermarkText, setWatermarkText] = useState('PixelForge');
   const [isDragging, setIsDragging] = useState(false);
-  
+
+  /** @type {[boolean, Function]} Indica si un filtro pixel-a-pixel se está aplicando (operación bloqueante) */
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  /** @type {React.MutableRefObject<HTMLButtonElement>} Botón "cerrar" del modal activo, para enfocarlo al abrir */
+  const modalCloseButtonRef = useRef(null);
+
+  /** @type {[string|null, Function]} Mensaje de error visible tras un intento de carga fallido */
+  const [uploadError, setUploadError] = useState(null);
+
   /** @constant {number} Límite máximo de pasos en el historial para evitar fugas de memoria RAM */
   const MAX_HISTORY = 10;
+
+  /** @constant {number} Píxeles procesados por "tanda" antes de ceder el hilo principal al navegador */
+  const PIXEL_CHUNK_SIZE = 250000;
+
+  const isAnyModalOpen = showExportModal || showInfoModal || showWatermarkModal;
+
+  /** Cierra cualquier modal que esté actualmente abierto */
+  const closeAllModals = () => {
+    setShowExportModal(false);
+    setShowWatermarkModal(false);
+    setShowInfoModal(false);
+  };
+
+  /**
+   * Accesibilidad de teclado: permite cerrar el modal activo con la tecla Escape,
+   * y mueve el foco a su botón de cierre apenas se abre (para usuarios de teclado
+   * y lectores de pantalla, que de otro modo quedarían con el foco "perdido" en
+   * el botón que abrió el modal).
+   */
+  useEffect(() => {
+    if (!isAnyModalOpen) return;
+
+    modalCloseButtonRef.current?.focus();
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') closeAllModals();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAnyModalOpen]);
+
+  /** Cierra el modal solo si el clic fue directamente sobre el fondo (no sobre su contenido) */
+  const handleBackdropClick = (e) => {
+    if (e.target === e.currentTarget) closeAllModals();
+  };
+
+  /** @constant {number} Límite de tamaño de archivo aceptado (25 MB): más allá de esto, leer el
+   * archivo a Base64 y procesarlo píxel a píxel puede congelar la pestaña por varios segundos. */
+  const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 
   /**
    * Dibuja la imagen en el Canvas aplicando los filtros actuales o restaurando un estado previo.
@@ -94,19 +143,60 @@ export default function App() {
 
   /**
    * Carga una imagen en memoria desde un archivo (File) subido o arrastrado.
+   * Valida tipo y tamaño antes de leer el archivo, y cubre los tres puntos
+   * donde una carga puede fallar en silencio: lectura del archivo (FileReader),
+   * decodificación de la imagen (Image) y lectura de píxeles del canvas
+   * (getImageData, que puede lanzar SecurityError con un SVG que referencia
+   * recursos externos y "mancha" el lienzo).
    * @param {File} file - El archivo de imagen seleccionado por el usuario.
    */
   const loadImageFromFile = (file) => {
-    if (!file || !file.type.startsWith('image/')) return; // Validación de tipo MIME
-    
+    setUploadError(null);
+
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setUploadError(`"${file.name}" no es un archivo de imagen soportado.`);
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      const limitMb = Math.round(MAX_FILE_SIZE_BYTES / (1024 * 1024));
+      setUploadError(`"${file.name}" pesa más de ${limitMb} MB. Prueba con una imagen más liviana.`);
+      return;
+    }
+
     const reader = new FileReader();
+
+    reader.onerror = () => {
+      setUploadError('No se pudo leer el archivo. Puede estar dañado o ser inaccesible.');
+    };
+
     reader.onload = (event) => {
       const img = new Image();
+
+      img.onerror = () => {
+        setUploadError('El archivo no pudo decodificarse como imagen. Puede estar corrupto.');
+      };
+
       img.onload = () => {
         const canvas = canvasRef.current;
         canvas.width = img.width;
         canvas.height = img.height;
-        
+
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        let imgData;
+        try {
+          imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        } catch {
+          // SecurityError: ocurre con SVGs que referencian recursos externos,
+          // que "manchan" (taint) el canvas e impiden leer sus píxeles.
+          setUploadError('Esta imagen no puede editarse a nivel de píxel (formato restringido por el navegador).');
+          return;
+        }
+
         // Resetear todos los estados a su valor por defecto al cargar nueva imagen
         setImage(img);
         setBrightness(100);
@@ -116,11 +206,6 @@ export default function App() {
         setBlur(0);
         setRotation(0);
         setZoom(1);
-        
-        // Renderizar la imagen inicial y guardarla en la posición 0 del historial
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         setHistory([imgData]);
         setHistoryIndex(0);
       };
@@ -189,37 +274,73 @@ export default function App() {
   };
 
   /**
-   * Aplica un algoritmo matemático iterativo pixel-por-pixel (CPU based).
+   * Espera al siguiente frame de pintado del navegador. Se usa entre "tandas"
+   * de procesamiento de píxeles para cederle el hilo principal al navegador
+   * (permitiendo repintar la UI, responder a scroll, etc.) en vez de bloquearlo
+   * de punta a punta con un solo bucle gigante.
+   */
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+
+  /**
+   * Aplica un algoritmo matemático iterativo pixel-por-pixel (CPU based), en
+   * tandas de PIXEL_CHUNK_SIZE píxeles, cediendo el hilo principal entre cada
+   * una. En una imagen grande (varios megapíxeles) este bucle es la parte más
+   * costosa de la app: sin trocear, corre de una sola vez y congela la pestaña
+   * (scroll, animaciones, cualquier otro input) hasta terminar.
+   * La matemática de cada filtro vive en `./filters.js` como función pura,
+   * para poder probarla sin necesidad de un <canvas> real.
    * @param {Function} filterFn - Callback que recibe (r, g, b) y retorna los nuevos valores de canal.
    */
-  const applyPixelFilter = (filterFn) => {
-    if (!image) return;
-    renderCanvas(); // Renderiza estado actual (Filtros paramétricos) a crudo
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const data = imgData.data;
-    
-    for (let i = 0; i < data.length; i += 4) {
-        const result = filterFn(data[i], data[i+1], data[i+2]);
-        data[i] = result.r;
-        data[i+1] = result.g;
-        data[i+2] = result.b;
+  const applyPixelFilter = async (filterFn) => {
+    if (!image || isProcessing) return;
+
+    setIsProcessing(true);
+    // Deja que React pinte el estado "Procesando..." antes de empezar el trabajo pesado;
+    // si no cedemos el hilo aquí, el indicador nunca llegaría a mostrarse en pantalla.
+    await nextFrame();
+
+    try {
+      renderCanvas(); // Renderiza estado actual (Filtros paramétricos) a crudo
+      // canvasRef puede quedar en null si el componente se desmonta mientras
+      // esperamos un frame (p. ej. el usuario navega fuera durante el procesamiento).
+      if (!canvasRef.current) return;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+
+      const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const data = imgData.data;
+      const totalPixels = data.length / 4;
+
+      for (let pixelStart = 0; pixelStart < totalPixels; pixelStart += PIXEL_CHUNK_SIZE) {
+        const pixelEnd = Math.min(pixelStart + PIXEL_CHUNK_SIZE, totalPixels);
+
+        for (let p = pixelStart; p < pixelEnd; p++) {
+          const i = p * 4;
+          const result = filterFn(data[i], data[i + 1], data[i + 2]);
+          data[i] = result.r;
+          data[i + 1] = result.g;
+          data[i + 2] = result.b;
+        }
+
+        // Si quedan más tandas, cedemos el hilo antes de continuar.
+        if (pixelEnd < totalPixels) {
+          await nextFrame();
+          if (!canvasRef.current) return; // desmontado durante la espera
+        }
+      }
+
+      ctx.putImageData(imgData, 0, 0);
+      saveHistory(); // Guardar el cambio destructivo en el historial
+    } finally {
+      setIsProcessing(false);
     }
-    
-    ctx.putImageData(imgData, 0, 0);
-    saveHistory(); // Guardar el cambio destructivo en el historial
   };
 
   /** Filtro rápido: Invierte todos los colores matemáticamente */
-  const applyInvert = () => applyPixelFilter((r, g, b) => ({ r: 255 - r, g: 255 - g, b: 255 - b }));
-  
+  const applyInvert = () => applyPixelFilter(invertPixel);
+
   /** Filtro rápido: Convierte la imagen a escala de grises perfecta */
-  const applyGrayscale = () => applyPixelFilter((r, g, b) => {
-      const gray = (r * 0.3) + (g * 0.59) + (b * 0.11);
-      return { r: gray, g: gray, b: gray };
-  });
+  const applyGrayscale = () => applyPixelFilter(grayscalePixel);
 
   /**
    * Dibuja el texto de la marca de agua permanentemente en la esquina inferior derecha.
@@ -272,6 +393,25 @@ export default function App() {
 
   return (
     <div className={`v3-layout ${theme}-theme`} style={theme === 'light' ? { background: '#f0f0f0', color: '#111' } : {}} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+      {/* BANNER DE ERROR DE CARGA (archivo inválido, demasiado grande, corrupto, etc.) */}
+      {uploadError && (
+        <div
+          role="alert"
+          aria-live="assertive"
+          className="upload-error-banner"
+        >
+          <span>{uploadError}</span>
+          <button
+            type="button"
+            onClick={() => setUploadError(null)}
+            aria-label="Descartar mensaje de error"
+            className="upload-error-dismiss"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
+
       {/* Fondo animado sólo en modo oscuro para contraste visual */}
       {theme === 'dark' && (
         <>
@@ -283,30 +423,30 @@ export default function App() {
 
       {/* DOCK FLOTANTE INFERIOR (Herramientas Principales) */}
       <motion.nav className="floating-dock" style={theme === 'light' ? { background: 'rgba(0,0,0,0.1)' } : {}} initial={{ y: 100 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 100 }}>
-         <button onClick={() => fileInputRef.current.click()} className="dock-btn">
+         <button onClick={() => fileInputRef.current.click()} disabled={isProcessing} className="dock-btn">
             <UploadCloud size={24} />
             <span>Cargar</span>
          </button>
          <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="oculto" />
-         
+
          <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 0.5rem' }}></div>
 
          {/* Controles de Historial */}
-         <button onClick={undo} disabled={historyIndex <= 0} className="dock-btn">
+         <button onClick={undo} disabled={historyIndex <= 0 || isProcessing} className="dock-btn">
             <Undo size={24} />
             <span>Deshacer</span>
          </button>
-         <button onClick={redo} disabled={historyIndex >= history.length - 1} className="dock-btn">
+         <button onClick={redo} disabled={historyIndex >= history.length - 1 || isProcessing} className="dock-btn">
             <Redo size={24} />
             <span>Rehacer</span>
          </button>
-         
+
          {/* Controles de Transformación */}
-         <button onClick={rotateImage} disabled={!image} className="dock-btn">
+         <button onClick={rotateImage} disabled={!image || isProcessing} className="dock-btn">
             <RotateCw size={24} />
             <span>Rotar</span>
          </button>
-         <button onClick={() => setShowWatermarkModal(true)} disabled={!image} className="dock-btn">
+         <button onClick={() => setShowWatermarkModal(true)} disabled={!image || isProcessing} className="dock-btn">
             <Type size={24} />
             <span>Marca</span>
          </button>
@@ -325,7 +465,7 @@ export default function App() {
          <div style={{ width: '1px', background: 'rgba(255,255,255,0.2)', margin: '0 0.5rem' }}></div>
 
          {/* Controles del Sistema */}
-         <button onClick={() => setShowExportModal(true)} disabled={!image} className="dock-btn">
+         <button onClick={() => setShowExportModal(true)} disabled={!image || isProcessing} className="dock-btn">
             <Download size={24} />
             <span>Exportar</span>
          </button>
@@ -349,33 +489,33 @@ export default function App() {
               <p style={{fontSize:'0.75rem'}}>Historial: {historyIndex + 1}/{history.length} (Max: {MAX_HISTORY})</p>
               
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Brillo <span>{brightness}%</span></label>
-                  <input type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(e.target.value)} />
+                  <label htmlFor="slider-brillo" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Brillo <span>{brightness}%</span></label>
+                  <input id="slider-brillo" type="range" min="0" max="200" value={brightness} onChange={(e) => setBrightness(e.target.value)} aria-valuetext={`${brightness}%`} />
               </div>
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Contraste <span>{contrast}%</span></label>
-                  <input type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(e.target.value)} />
+                  <label htmlFor="slider-contraste" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Contraste <span>{contrast}%</span></label>
+                  <input id="slider-contraste" type="range" min="0" max="200" value={contrast} onChange={(e) => setContrast(e.target.value)} aria-valuetext={`${contrast}%`} />
               </div>
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Saturación <span>{saturate}%</span></label>
-                  <input type="range" min="0" max="200" value={saturate} onChange={(e) => setSaturate(e.target.value)} />
+                  <label htmlFor="slider-saturacion" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Saturación <span>{saturate}%</span></label>
+                  <input id="slider-saturacion" type="range" min="0" max="200" value={saturate} onChange={(e) => setSaturate(e.target.value)} aria-valuetext={`${saturate}%`} />
               </div>
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Tono (Hue) <span>{hue}°</span></label>
-                  <input type="range" min="0" max="360" value={hue} onChange={(e) => setHue(e.target.value)} />
+                  <label htmlFor="slider-tono" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Tono (Hue) <span>{hue}°</span></label>
+                  <input id="slider-tono" type="range" min="0" max="360" value={hue} onChange={(e) => setHue(e.target.value)} aria-valuetext={`${hue} grados`} />
               </div>
               <div className="slider-group">
-                  <label style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Desenfoque <span>{blur}px</span></label>
-                  <input type="range" min="0" max="20" value={blur} onChange={(e) => setBlur(e.target.value)} />
+                  <label htmlFor="slider-desenfoque" style={{color: theme === 'light' ? '#333' : '#E2E8F0'}}>Desenfoque <span>{blur}px</span></label>
+                  <input id="slider-desenfoque" type="range" min="0" max="20" value={blur} onChange={(e) => setBlur(e.target.value)} aria-valuetext={`${blur} pixeles`} />
               </div>
 
               <hr style={{ borderColor: 'rgba(255,255,255,0.1)', margin: '1rem 0' }} />
               
               <h3 style={{ fontSize: '1rem', fontWeight: 600 }}>Filtros de Acción Rápida</h3>
-              <button onClick={applyInvert} className="btn btn-secundario" style={{width:'100%', marginBottom:'0.5rem', display: 'flex', justifyContent: 'center', gap:'0.5rem'}}>
+              <button onClick={applyInvert} disabled={isProcessing} className="btn btn-secundario" style={{width:'100%', marginBottom:'0.5rem', display: 'flex', justifyContent: 'center', gap:'0.5rem'}}>
                  <Contrast size={16}/> Invertir Colores
               </button>
-              <button onClick={applyGrayscale} className="btn btn-secundario" style={{width:'100%', display: 'flex', justifyContent: 'center', gap:'0.5rem'}}>
+              <button onClick={applyGrayscale} disabled={isProcessing} className="btn btn-secundario" style={{width:'100%', display: 'flex', justifyContent: 'center', gap:'0.5rem'}}>
                  <Settings size={16}/> Blanco y Negro
               </button>
             </aside>
@@ -383,12 +523,14 @@ export default function App() {
 
           {/* CONTENEDOR DEL CANVAS Y MENSAJES DE ARRASTRAR */}
           <div className={`canvas-container ${isDragging ? 'drag-active' : ''}`}>
-              <canvas 
-                 ref={canvasRef} 
-                 style={{ 
-                   display: image ? 'block' : 'none', 
-                   transform: `scale(${zoom})`, 
-                   transformOrigin: 'center center' 
+              <canvas
+                 ref={canvasRef}
+                 role="img"
+                 aria-label={image ? `Vista previa de la imagen editada, zoom ${Math.round(zoom * 100)}%` : 'Sin imagen cargada'}
+                 style={{
+                   display: image ? 'block' : 'none',
+                   transform: `scale(${zoom})`,
+                   transformOrigin: 'center center'
                  }}>
               </canvas>
               {!image && (
@@ -396,6 +538,12 @@ export default function App() {
                       <ImageIcon size={64} className="icono-flotante" style={{ color: theme === 'light' ? '#555' : 'rgba(255,255,255,0.4)', marginBottom: '1rem' }} />
                       <span style={{ fontSize: '1.2rem', color: theme === 'light' ? '#333' : 'rgba(255,255,255,0.7)' }}>Arrastra una imagen aquí o usa el dock inferior</span>
                   </motion.div>
+              )}
+              {isProcessing && (
+                  <div className="processing-overlay" role="status" aria-live="polite">
+                      <div className="processing-spinner" aria-hidden="true"></div>
+                      <span>Procesando imagen...</span>
+                  </div>
               )}
           </div>
       </div>
@@ -407,11 +555,11 @@ export default function App() {
         
         {/* MODAL DE EXPORTACIÓN */}
         {showExportModal && (
-          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+          <motion.div className="modal-backdrop" onClick={handleBackdropClick} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div role="dialog" aria-modal="true" aria-labelledby="export-modal-title" className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2>Exportación Pro</h2>
-                <button onClick={() => setShowExportModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
+                <h2 id="export-modal-title">Exportación Pro</h2>
+                <button ref={modalCloseButtonRef} onClick={() => setShowExportModal(false)} className="btn-close" aria-label="Cerrar" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
                 <button onClick={() => exportImage('png')} className="btn btn-primario" style={{width:'100%', marginBottom:10}}>PNG (Calidad Estudio)</button>
@@ -424,19 +572,21 @@ export default function App() {
 
         {/* MODAL DE MARCA DE AGUA */}
         {showWatermarkModal && (
-          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+          <motion.div className="modal-backdrop" onClick={handleBackdropClick} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div role="dialog" aria-modal="true" aria-labelledby="watermark-modal-title" className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2>Añadir Marca de Agua</h2>
-                <button onClick={() => setShowWatermarkModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
+                <h2 id="watermark-modal-title">Añadir Marca de Agua</h2>
+                <button ref={modalCloseButtonRef} onClick={() => setShowWatermarkModal(false)} className="btn-close" aria-label="Cerrar" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
-                <input 
-                  type="text" 
-                  value={watermarkText} 
-                  onChange={e => setWatermarkText(e.target.value)} 
+                <label htmlFor="watermark-text-input" style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem' }}>Texto de la marca de agua</label>
+                <input
+                  id="watermark-text-input"
+                  type="text"
+                  value={watermarkText}
+                  onChange={e => setWatermarkText(e.target.value)}
                   placeholder="Tu texto aquí"
-                  style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', borderRadius: '0.5rem', border: '1px solid #ccc' }} 
+                  style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', borderRadius: '0.5rem', border: '1px solid #ccc' }}
                 />
                 <button onClick={applyWatermark} className="btn btn-primario" style={{width:'100%'}}>Aplicar Texto</button>
               </div>
@@ -446,11 +596,11 @@ export default function App() {
 
         {/* MODAL DE AYUDA E INFORMACIÓN */}
         {showInfoModal && (
-          <motion.div className="modal-backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
-            <motion.div className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
+          <motion.div className="modal-backdrop" onClick={handleBackdropClick} initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}}>
+            <motion.div role="dialog" aria-modal="true" aria-labelledby="info-modal-title" className="modal-content glassmorphism" style={theme === 'light' ? { background: 'white', color: 'black' } : {}} initial={{scale:0.9, y:20}} animate={{scale:1, y:0}} exit={{scale:0.9, y:20}}>
               <div className="modal-header">
-                <h2>PixelForge V5</h2>
-                <button onClick={() => setShowInfoModal(false)} className="btn-close" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
+                <h2 id="info-modal-title">PixelForge V5</h2>
+                <button ref={modalCloseButtonRef} onClick={() => setShowInfoModal(false)} className="btn-close" aria-label="Cerrar" style={theme === 'light' ? {color:'black'} : {}}><X size={20}/></button>
               </div>
               <div className="modal-body">
                 <p>Nuevas características V5 (Refinamiento Total):</p>
