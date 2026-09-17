@@ -7,7 +7,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Info, X, UploadCloud, Moon, Sun, Type, ZoomIn, ZoomOut, Contrast } from 'lucide-react';
+import { Image as ImageIcon, Download, Undo, Redo, RotateCw, Info, X, UploadCloud, Moon, Sun, Type, ZoomIn, ZoomOut, Contrast, Settings } from 'lucide-react';
 import './index.css';
 import './layout.css';
 
