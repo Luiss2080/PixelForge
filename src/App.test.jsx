@@ -311,3 +311,74 @@ describe('PixelPro Studio V5 - Panel de filtros con imagen cargada', () => {
     await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
   });
 });
+
+describe('PixelForge - los filtros de un clic sobreviven a exportar, marca de agua y encadenado', () => {
+  // Mismo truco que arriba: jsdom no decodifica imágenes, así que forzamos `load`.
+  let originalSrcDescriptor;
+
+  beforeEach(() => {
+    originalSrcDescriptor = Object.getOwnPropertyDescriptor(window.HTMLImageElement.prototype, 'src');
+    Object.defineProperty(window.HTMLImageElement.prototype, 'src', {
+      configurable: true,
+      get() {
+        return originalSrcDescriptor.get.call(this);
+      },
+      set(value) {
+        originalSrcDescriptor.set.call(this, value);
+        this.width = 10;
+        this.height = 10;
+        this.dispatchEvent(new Event('load'));
+      },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window.HTMLImageElement.prototype, 'src', originalSrcDescriptor);
+  });
+
+  // Carga una imagen, aplica "Blanco y Negro" y devuelve el contexto 2D (mock)
+  // con su historial de llamadas de drawImage ya limpiado. Si después de esto
+  // la app vuelve a llamar a drawImage, está redibujando la imagen ORIGINAL
+  // encima de los píxeles ya filtrados.
+  const loadAndGrayscale = async () => {
+    const { container } = render(<App />);
+    const fileInput = document.querySelector('input[type="file"]');
+    fireEvent.change(fileInput, { target: { files: [new File(['x'], 'foto.png', { type: 'image/png' })] } });
+    await waitFor(() => expect(screen.getByText(/Filtros Pro/i)).toBeInTheDocument());
+
+    fireEvent.click(screen.getByText(/Blanco y Negro/i).closest('button'));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+
+    const ctx = container.querySelector('canvas').getContext('2d');
+    ctx.drawImage.mockClear();
+    return ctx;
+  };
+
+  it('exportar no redibuja la imagen original sobre el filtro aplicado', async () => {
+    const ctx = await loadAndGrayscale();
+
+    fireEvent.click(screen.getByText(/Exportar/i).closest('button'));
+    fireEvent.click(await screen.findByText(/PNG \(Calidad Estudio\)/i));
+
+    expect(ctx.drawImage).not.toHaveBeenCalled();
+  });
+
+  it('la marca de agua no redibuja la imagen original sobre el filtro aplicado', async () => {
+    const ctx = await loadAndGrayscale();
+
+    fireEvent.click(screen.getByText(/Marca/i).closest('button'));
+    fireEvent.click(await screen.findByText(/Aplicar Texto/i));
+
+    expect(ctx.drawImage).not.toHaveBeenCalled();
+    expect(ctx.fillText).toHaveBeenCalled();
+  });
+
+  it('encadenar un segundo filtro parte del resultado del primero, no de la original', async () => {
+    const ctx = await loadAndGrayscale();
+
+    fireEvent.click(screen.getByText(/Invertir Colores/i).closest('button'));
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+
+    expect(ctx.drawImage).not.toHaveBeenCalled();
+  });
+});

@@ -142,6 +142,17 @@ export default function App() {
   }, [image, brightness, contrast, saturate, hue, blur, rotation]);
 
   /**
+   * Deja el lienzo listo para leerlo o modificarlo (filtro de píxeles, marca de agua, exportación).
+   * Solo redibuja desde la imagen original mientras el lienzo aún refleja únicamente los ajustes
+   * paramétricos (historial en el estado inicial). Una vez aplicado un filtro de un clic o la marca
+   * de agua, el lienzo contiene píxeles ya modificados: volver a llamar a `renderCanvas()` los
+   * descartaría pintando encima la imagen original.
+   */
+  const syncCanvas = () => {
+    if (historyIndex <= 0) renderCanvas();
+  };
+
+  /**
    * Carga una imagen en memoria desde un archivo (File) subido o arrastrado.
    * Valida tipo y tamaño antes de leer el archivo, y cubre los tres puntos
    * donde una carga puede fallar en silencio: lectura del archivo (FileReader),
@@ -300,7 +311,7 @@ export default function App() {
     await nextFrame();
 
     try {
-      renderCanvas(); // Renderiza estado actual (Filtros paramétricos) a crudo
+      syncCanvas(); // Renderiza estado actual (filtros paramétricos) solo si aún no hay píxeles editados
       // canvasRef puede quedar en null si el componente se desmonta mientras
       // esperamos un frame (p. ej. el usuario navega fuera durante el procesamiento).
       if (!canvasRef.current) return;
@@ -347,7 +358,7 @@ export default function App() {
    */
   const applyWatermark = () => {
     if (!image) return;
-    renderCanvas();
+    syncCanvas();
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     
@@ -370,7 +381,7 @@ export default function App() {
    */
   const exportImage = (format, quality = 0.9) => {
     if (!image) return;
-    renderCanvas();
+    syncCanvas();
     const canvas = canvasRef.current;
     const mime = `image/${format}`;
     const url = canvas.toDataURL(mime, quality);
