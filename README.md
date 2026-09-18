@@ -5,7 +5,7 @@
   <img src="https://img.shields.io/badge/estado-funcional-brightgreen?style=for-the-badge" alt="Estado: funcional" />
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React 19" />
   <img src="https://img.shields.io/badge/Vite-8-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite 8" />
-  <img src="https://img.shields.io/badge/tests-25%20pasan-brightgreen?style=for-the-badge" alt="25 tests" />
+  <img src="https://img.shields.io/badge/tests-29%20pasan-brightgreen?style=for-the-badge" alt="29 tests" />
   <img src="https://github.com/Luiss2080/PixelForge/actions/workflows/ci.yml/badge.svg" alt="CI" />
   <p>
     <a href="#-inicio-rápido">Inicio rápido</a> ·
@@ -26,7 +26,6 @@ Estado inicial de la aplicación (tema oscuro), capturado desde la build de prod
   <img src="docs/screenshots/editor-vacio.png" width="820" alt="PixelForge en su estado inicial: zona para arrastrar una imagen y dock inferior con Cargar, Deshacer, Rehacer, Rotar, Marca, Acercar, Alejar y Exportar" />
 </p>
 
-> En la captura el dock inferior aparece descentrado y cortado por la derecha; ver [Lo que todavía no existe](#-lo-que-todavía-no-existe).
 
 Flujo de uso: `Cargar` (o arrastrar y soltar) → ajustar sliders o filtros de un clic → `Marca` opcional → `Exportar`.
 
@@ -100,7 +99,7 @@ React 19, Vite 8, Framer Motion (animaciones), Lucide React (iconos), Vitest 5 +
 ## 🧪 Pruebas
 
 ```bash
-npm test               # 25 tests en 2 archivos, todos pasan
+npm test               # 29 tests en 2 archivos, todos pasan
 npm run test:coverage  # con cobertura (lo que ejecuta CI)
 ```
 
@@ -116,11 +115,9 @@ Los tests usan un canvas simulado (`vitest-canvas-mock`): no comprueban el resul
 
 ## 🚧 Lo que todavía no existe
 
-- **Dock descentrado:** el `<motion.nav className="floating-dock">` anima `y` con Framer Motion mientras el CSS lo centra con `transform: translateX(-50%)`; según se observa en la captura, la animación reemplaza ese `transform` y el dock queda desplazado y cortado por la derecha. No se corrigió aquí (este cambio solo toca documentación).
-- **Pendiente de verificar en navegador (por lectura del código):** `exportImage`, `applyWatermark` y `applyPixelFilter` empiezan llamando a `renderCanvas()`, que vuelve a dibujar la imagen original con los filtros CSS. Eso sugiere que la exportación no incluiría los filtros de un clic ni la marca de agua, y que encadenar dos filtros de un clic reinicia desde la original; además, el efecto que redibuja con los sliders solo actúa con el historial en el estado inicial. No se probó con una imagen real.
 - Los sliders (brillo, contraste, etc.), la rotación y el zoom no se registran en el historial.
 - `sepiaPixel` y `binarizePixel` existen y están probadas, pero **no tienen botón** en la interfaz.
-- Los tests no cubren la carga real de una imagen, el resultado píxel a píxel ni la exportación.
+- Los tests no cubren la carga real de una imagen ni el resultado píxel a píxel (sí comprueban, con el canvas simulado, que exportar, la marca de agua y encadenar filtros ya no redibujan la imagen original sobre los píxeles filtrados).
 - La marca de agua tiene tamaño, color, opacidad y posición fijos.
 - `docs/manual_de_uso.md` menciona procesamiento con aceleración de hardware en imágenes 4K sin medición que lo respalde.
 - Sin pruebas E2E.
