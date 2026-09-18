@@ -24,6 +24,17 @@ describe('PixelForge V5 - Suite de Pruebas', () => {
    * Al no haber cargado una imagen ni tener historial (historyIndex = -1), los botones
    * deshacer y rehacer deben estar bloqueados (disabled).
    */
+  /**
+   * Regresión: Framer Motion escribe su propio `transform` inline (por animar `y`) y
+   * pisaba el `translateX(-50%)` del CSS, dejando el dock descentrado a la derecha.
+   * El centrado debe formar parte del transform que gestiona Framer Motion.
+   */
+  it('El dock conserva su centrado horizontal (translateX -50%) bajo Framer Motion', () => {
+    const { container } = render(<App />);
+    const dock = container.querySelector('.floating-dock');
+    expect(dock.style.transform).toContain('translateX(-50%)');
+  });
+
   it('Debe deshabilitar los botones Deshacer/Rehacer al inicio', () => {
     render(<App />);
     // Buscamos los botones buscando su texto en el DOM y obteniendo el elemento padre (button)

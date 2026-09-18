@@ -432,8 +432,10 @@ export default function App() {
         </>
       )}
 
-      {/* DOCK FLOTANTE INFERIOR (Herramientas Principales) */}
-      <motion.nav className="floating-dock" style={theme === 'light' ? { background: 'rgba(0,0,0,0.1)' } : {}} initial={{ y: 100 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 100 }}>
+      {/* DOCK FLOTANTE INFERIOR (Herramientas Principales).
+          `x: '-50%'` va en el style de motion: Framer escribe su propio transform inline y
+          pisaría el translateX(-50%) del CSS (left: 50%), descentrando el dock. */}
+      <motion.nav className="floating-dock" style={{ x: '-50%', ...(theme === 'light' ? { background: 'rgba(0,0,0,0.1)' } : {}) }} initial={{ y: 100 }} animate={{ y: 0 }} transition={{ type: "spring", stiffness: 100 }}>
          <button onClick={() => fileInputRef.current.click()} disabled={isProcessing} className="dock-btn">
             <UploadCloud size={24} />
             <span>Cargar</span>
